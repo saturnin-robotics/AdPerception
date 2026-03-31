@@ -1,0 +1,64 @@
+# =============================================================================
+# AdPerception — .gitignore
+# =============================================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# --- C++ / CUDA build artifacts ---
+*.so
+*.o
+*.a
+*.out
+csrc/**/build/
+csrc/**/*.so
+
+# --- Third-party (has its own git) ---
+third_party/
+
+# --- Checkpoints & weights ---
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.bin
+
+# --- Data ---
+data/
+*.bin
+*.pkl
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# --- Logs & experiments ---
+logs/
+runs/
+wandb/
+outputs/
+*.log
+*.csv
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# --- Env ---
+.env
+.envrc
