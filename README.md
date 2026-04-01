@@ -1,7 +1,7 @@
 # AdPerception
 
 LiDAR-camera 3D perception pipeline with multi-object tracking.  
-Built for nuScenes — real-time target < 100ms @ 10 Hz.
+Built for nuScenes - real-time target < 100ms @ 10 Hz.
 
 ## Architecture
 
@@ -40,38 +40,38 @@ LiDAR point cloud          6x surround cameras
 
 ## Environment setup
 
-### Step 0 — Prerequisites
+### Step 0 - Prerequisites
 
 ```bash
-# GCC 12 is required — CUDA 12.1 does not support GCC 13+
+# GCC 12 is required - CUDA 12.1 does not support GCC 13+
 sudo apt install gcc-12 g++-12
 
 # Verify
 gcc-12 --version  # must show 12.x.x
 ```
 
-### Step 1 — Conda environment
+### Step 1 - Conda environment
 
 ```bash
 conda create -n AdPerception python=3.11 -y
 conda activate AdPerception
 ```
 
-### Step 2 — PyTorch (cu121 wheels)
+### Step 2 - PyTorch (cu121 wheels)
 
 ```bash
 pip install torch==2.1.2 torchvision==0.16.2 \
     --index-url https://download.pytorch.org/whl/cu121
 ```
 
-### Step 3 — spconv (sparse convolutions)
+### Step 3 - spconv (sparse convolutions)
 
 ```bash
-# cu120 covers the entire CUDA 12.x family — correct for CUDA 12.1
+# cu120 covers the entire CUDA 12.x family - correct for CUDA 12.1
 pip install spconv-cu120
 ```
 
-### Step 4 — PyTorch Geometric
+### Step 4 - PyTorch Geometric
 
 ```bash
 pip install torch-scatter torch-cluster \
@@ -80,7 +80,7 @@ pip install torch-scatter torch-cluster \
 pip install torch-geometric
 ```
 
-### Step 5 — All other dependencies
+### Step 5 - All other dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -89,7 +89,7 @@ pip install -r requirements.txt
 > If `lap` fails to build, use `lapx` instead (Python 3.11 wheels available):
 > `pip install lapx`
 
-### Step 6 — Pointcept (PTv3 backbone)
+### Step 6 - Pointcept (PTv3 backbone)
 
 ```bash
 mkdir -p third_party
@@ -98,7 +98,7 @@ git clone https://github.com/Pointcept/Pointcept.git
 cd ..
 ```
 
-### Step 7 — Conda activation hooks
+### Step 7 - Conda activation hooks
 
 These environment variables are set automatically every time the conda
 environment is activated.
@@ -107,11 +107,11 @@ environment is activated.
 mkdir -p $CONDA_PREFIX/etc/conda/activate.d
 
 cat >> $CONDA_PREFIX/etc/conda/activate.d/adperception_paths.sh << 'HOOKS'
-# Pointcept — main package path
+# Pointcept - main package path
 export PYTHONPATH="$HOME/AdPerception/third_party/Pointcept:$PYTHONPATH"
-# pointops — CUDA custom ops (compiled separately)
+# pointops - CUDA custom ops (compiled separately)
 export PYTHONPATH="$HOME/AdPerception/third_party/Pointcept/libs:$PYTHONPATH"
-# GCC 12 — required by CUDA 12.1 (does not support GCC 13+)
+# GCC 12 - required by CUDA 12.1 (does not support GCC 13+)
 export CC=/usr/bin/gcc-12
 export CXX=/usr/bin/g++-12
 HOOKS
@@ -123,9 +123,9 @@ Apply immediately without restarting:
 conda deactivate && conda activate AdPerception
 ```
 
-### Step 8 — Compile pointops (CUDA custom ops for PTv3)
+### Step 8 - Compile pointops (CUDA custom ops for PTv3)
 
-pointops is not a standard pip package — it must be compiled from source.
+pointops is not a standard pip package - it must be compiled from source.
 The `--no-build-isolation` flag is mandatory: it forces pip to use the torch
 already installed in the conda environment instead of an isolated subprocess
 that cannot see torch.
@@ -142,7 +142,7 @@ pip install -e . --no-build-isolation
 cd ~/AdPerception
 ```
 
-#### Known issue — circular import after compilation
+#### Known issue - circular import after compilation
 
 If you see this error after compilation:
 
@@ -157,7 +157,7 @@ sed -i 's/from pointops import knn_query, ball_query, grouping/from .query impor
     ~/AdPerception/third_party/Pointcept/libs/pointops/functions/utils.py
 ```
 
-### Step 9 — Verify
+### Step 9 - Verify
 
 ```bash
 python check_env.py
@@ -167,7 +167,7 @@ Expected output:
 
 ```
 ==================================================================
-  AdPerception — Environment Check
+  AdPerception - Environment Check
   Python 3.11.x  |  .../envs/AdPerception/bin/python
 ==================================================================
 Package           Status    Constraint      Detected version
@@ -215,7 +215,7 @@ AdPerception/
 │       └── setup.py
 |
 ├── data/
-│   └── nuscenes -> /path/to/nuscenes   # symlink — do not copy data
+│   └── nuscenes -> /path/to/nuscenes   # symlink - do not copy data
 |
 ├── checkpoints/                    # pretrained weights (git-ignored)
 |
@@ -245,7 +245,6 @@ AdPerception/
 ├── third_party/
 │   └── Pointcept/                  # git-ignored (own repository)
 |
-├── check_env.py                    # environment verification script
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -255,7 +254,7 @@ AdPerception/
 
 ## Dependency conflict notes
 
-Conflicts resolved during setup — do not upgrade these packages:
+Conflicts resolved during setup - do not upgrade these packages:
 
 | Package | Pinned version | Reason |
 |---------|---------------|--------|
@@ -270,20 +269,20 @@ Conflicts resolved during setup — do not upgrade these packages:
 
 ## Roadmap
 
-### Phase 1 — LiDAR detection + MOT
-- [ ] `src/utils/voxelizer.py` — point cloud to spconv tensor
-- [ ] `src/models/backbone/ptv3_wrapper.py` — PTv3 feature extraction
-- [ ] `src/models/heads/centerpoint.py` — heatmap detection head
-- [ ] `src/tracking/simpletrack_wrapper.py` — SimpleTrack MOT
-- [ ] `src/tracking/visualization.py` — BEV + 3D dashboard
+### Phase 1 - LiDAR detection + MOT
+- [x] `src/utils/voxelizer.py` - point cloud to spconv tensor
+- [ ] `src/models/backbone/ptv3_wrapper.py` PTv3 feature extraction
+- [ ] `src/models/heads/centerpoint.py` - heatmap detection head
+- [ ] `src/tracking/simpletrack_wrapper.py` - SimpleTrack MOT
+- [ ] `src/tracking/visualization.py` - BEV + 3D dashboard
 
-### Phase 2 — Camera fusion (BEVFusion)
-- [ ] `src/models/camera/lss.py` — Lift-Splat-Shoot
-- [ ] `src/models/fusion/bev_encoder.py` — BEV fusion encoder
-- [ ] `csrc/bev_pool/` — CUDA BEV pooling kernel
-- [ ] `src/models/heads/seg_head.py` — BEV segmentation head
+### Phase 2 - Camera fusion (BEVFusion)
+- [ ] `src/models/camera/lss.py` - Lift-Splat-Shoot
+- [ ] `src/models/fusion/bev_encoder.py` - BEV fusion encoder
+- [ ] `csrc/bev_pool/` - CUDA BEV pooling kernel
+- [ ] `src/models/heads/seg_head.py` - BEV segmentation head
 
-### Phase 3 — Benchmark
+### Phase 3 - Benchmark
 - [ ] nuScenes 3D detection (mAP, NDS)
 - [ ] nuScenes MOT (AMOTA, AMOTP)
-- [ ] Inference profiling — target < 100ms @ 10 Hz
+- [ ] Inference profiling - target < 100ms @ 10 Hz
