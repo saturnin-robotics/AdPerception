@@ -49,7 +49,7 @@ class Voxelizer:
     # ----------------------------------------------------------------
 
 
-    def __call__(self, points: torch.Tensor, batch_size: int =1) -> spconv.SparseConvTensor:
+    def __call__(self, points: torch.Tensor, batch_size: int =1, return_inverse: bool= False):
 
         """
             Args:
@@ -88,7 +88,7 @@ class Voxelizer:
 
         # Encoding by mean pool (group by voxel and mean-pool features)
 
-        features, sparse_indices = self._group_and_encode(points, voxel_coords, batch_size)
+        features, sparse_indices, inverse_indices = self._group_and_encode(points, voxel_coords, batch_size)
 
         # Wrap into SparseConvTensor (expect (Z, Y, X))
 
@@ -102,7 +102,10 @@ class Voxelizer:
             batch_size = batch_size
         )
 
+        if return_inverse:
+            return sparse_tensor, inverse_indices
         return sparse_tensor
+        
     
 
     def _quantize(self, points: torch.Tensor):
@@ -215,5 +218,5 @@ class Voxelizer:
 
         sparce_indices = torch.stack([batch_idx_v, vz_v, vy_v, vx_v], dim=1).int()
         
-        return features,  sparce_indices
+        return features,  sparce_indices, inverse_indices
 
