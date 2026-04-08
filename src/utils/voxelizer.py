@@ -88,7 +88,7 @@ class Voxelizer:
 
         # Encoding by mean pool (group by voxel and mean-pool features)
 
-        features, sparse_indices, inverse_indices = self._group_and_encode(points, voxel_coords, batch_size)
+        features, sparse_indices, inverse_indices, num_voxels = self._group_and_encode(points, voxel_coords, batch_size)
 
         # Wrap into SparseConvTensor (expect (Z, Y, X))
 
@@ -102,9 +102,21 @@ class Voxelizer:
             batch_size = batch_size
         )
 
-        if return_inverse:
-            return sparse_tensor, inverse_indices
-        return sparse_tensor
+        if not return_inverse:
+            return sparse_tensor
+        
+        N_original = valid_mask.shape[0]
+        valid_indices = torch.where(valid_mask)[0]
+        M_kept = inverse_indices.shape[0]
+
+        inverse_indices_full = torch.full(
+            (N_original,), fill_value=num_voxels,
+            dtype=torch.long, device = device,
+        )
+
+        inverse_indices_full[valid_indices[:M_kept]] = inverse_indices
+
+        return sparse_tensor, inverse_indices_full
         
     
 
@@ -218,5 +230,5 @@ class Voxelizer:
 
         sparce_indices = torch.stack([batch_idx_v, vz_v, vy_v, vx_v], dim=1).int()
         
-        return features,  sparce_indices, inverse_indices
+        return features,  sparce_indices, inverse_indices, num_voxels
 
