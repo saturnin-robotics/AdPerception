@@ -271,9 +271,10 @@ Conflicts resolved during setup - do not upgrade these packages:
 
 ### Phase 1 - LiDAR detection + MOT
 - [x] `src/utils/voxelizer.py` - point cloud to spconv tensor
-- [ ] `src/models/backbone/ptv3_wrapper.py` PTv3 feature extraction
-- [ ] `src/models/heads/centerpoint.py` - heatmap detection head
-- [ ] `src/tracking/simpletrack_wrapper.py` - SimpleTrack MOT
+- [x] `src/models/backbone/ptv3_wrapper.py` PTv3 feature extraction
+- [x] `src/models/heads/centerpoint.py` - heatmap detection head
+- [x] `src/models/pipeline.py`           - complete pipeline for Lidar Perception
+- [x] `src/tracking/simpletrack_wrapper.py` - SimpleTrack MOT
 - [ ] `src/tracking/visualization.py` - BEV + 3D dashboard
 
 ### Phase 2 - Camera fusion (BEVFusion)
