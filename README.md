@@ -168,7 +168,7 @@ Expected output:
 ```
 ==================================================================
   AdPerception - Environment Check
-  Python 3.11.x  |  .../envs/AdPerception/bin/python
+  Python 3.11.x  |  ../anaconda3/envs/AdPerception/bin/python
 ==================================================================
 Package           Status    Constraint      Detected version
 ----------------  --------  --------------  -------------------------
@@ -244,6 +244,7 @@ AdPerception/
 ├── tests/
 ├── third_party/
 │   └── Pointcept/                  # git-ignored (own repository)
+|   └── SimpleTrack/
 |
 ├── requirements.txt
 ├── .gitignore
@@ -275,7 +276,7 @@ Conflicts resolved during setup - do not upgrade these packages:
 - [x] `src/models/heads/centerpoint.py` - heatmap detection head
 - [x] `src/models/pipeline.py`           - complete pipeline for Lidar Perception
 - [x] `src/tracking/simpletrack_wrapper.py` - SimpleTrack MOT
-- [ ] `src/tracking/visualization.py` - BEV + 3D dashboard
+- [x] `src/tracking/visualization.py` - BEV + 3D dashboard
 
 ### Phase 2 - Camera fusion (BEVFusion)
 - [ ] `src/models/camera/lss.py` - Lift-Splat-Shoot

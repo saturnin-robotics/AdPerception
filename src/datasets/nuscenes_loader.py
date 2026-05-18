@@ -1,7 +1,7 @@
 """
 nuscenes_loader.py -- nuScenes LiDAR dataloader for AdPerception.
 
-Loads LiDAR point clouds and 3D annotations from nuScenes mini/trainval.
+Loads LiDAR point clouds and 3D annotations from nuScenes train val.
 Returns dicts consumed directly by LiDARPerceptionPipeline.
 
 nuScenes coordinate conventions:
@@ -92,11 +92,16 @@ class NuScenesLiDARDataset(Dataset):
         # load GT annotations in ego frame
         gt_boxes, gt_labels = self._load_annotations(sample)
 
+        # ego-to-world transform for visualization
+        ego_t, ego_r = self._get_ego_pose(sample)
+
         return {
-            "points"       : torch.from_numpy(points).float(),
-            "gt_boxes"     : torch.from_numpy(gt_boxes).float(),
-            "gt_labels"    : torch.from_numpy(gt_labels).long(),
-            "sample_token" : token,
+            "points"          : torch.from_numpy(points).float(),
+            "gt_boxes"        : torch.from_numpy(gt_boxes).float(),
+            "gt_labels"       : torch.from_numpy(gt_labels).long(),
+            "sample_token"    : token,
+            "ego_translation" : torch.from_numpy(ego_t),  # (3,)
+            "ego_rotation"    : torch.from_numpy(ego_r),  # (3, 3)
         }
 
     # ------------------------------------------------------------------
@@ -127,6 +132,21 @@ class NuScenesLiDARDataset(Dataset):
             if scene["name"] in split_scenes:
                 tokens.append(sample["token"])
         return tokens
+
+    def _get_ego_pose(self, sample: dict):
+        """
+        Returns the ego-to-world transform for this sample.
+
+        Returns:
+            ego_t : (3,)   float32  translation [x, y, z] in world frame
+            ego_r : (3, 3) float32  rotation matrix (ego -> world)
+        """
+        lidar_token = sample["data"]["LIDAR_TOP"]
+        lidar_data  = self.nusc.get("sample_data", lidar_token)
+        ego_pose    = self.nusc.get("ego_pose", lidar_data["ego_pose_token"])
+        ego_t       = np.array(ego_pose["translation"], dtype=np.float32)
+        ego_r       = Quaternion(ego_pose["rotation"]).rotation_matrix.astype(np.float32)
+        return ego_t, ego_r
 
     def _load_lidar(self, sample: dict) -> np.ndarray:
         """

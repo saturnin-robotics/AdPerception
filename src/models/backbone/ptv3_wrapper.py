@@ -41,14 +41,15 @@ class PTv3Wrapper(nn.Module):
             in_channels        = in_channels,
             order              = ["z", "z-trans", "hilbert", "hilbert-trans"],
             stride             = [2, 2, 2, 2],
-            enc_depths         = [2, 2, 2, 6, 2],
-            enc_channels       = [32, 64, 128, 256, 512],
-            enc_num_head       = [2, 4, 8, 16, 32],
-            enc_patch_size     = [48, 48, 48, 48, 48],
+            # architecture matches Sonata checkpoint
+            enc_depths         = [3, 3, 3, 12, 3],
+            enc_channels       = [48, 96, 192, 384, 512],
+            enc_num_head       = [3, 6, 12, 24, 32],
+            enc_patch_size     = [512, 512, 512, 512, 512],
             dec_depths         = [2, 2, 2, 2],
-            dec_channels       = [128, 64, 64, 64],
-            dec_num_head       = [8, 4, 4, 4],
-            dec_patch_size     = [48, 48, 48, 48],
+            dec_channels       = [64, 128, 192, 384],
+            dec_num_head       = [4, 8, 12, 24],
+            dec_patch_size     = [512, 512, 512, 512],
             mlp_ratio          = 4,
             qkv_bias           = True,
             qk_scale           = None,
@@ -67,7 +68,7 @@ class PTv3Wrapper(nn.Module):
 
         self.backbone: nn.Module = PointTransformerV3(**cfg)  # type: ignore
 
-        dec_out: int = int(cfg["dec_channels"][0])  # type: ignore
+        dec_out: int = int(cfg["dec_channels"][0])  # type: ignore  -- dec[0] = finest stage output
         self.proj = nn.Linear(dec_out, out_channels)
 
     # ------------------------------------------------------------------

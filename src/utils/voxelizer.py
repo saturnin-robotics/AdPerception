@@ -10,7 +10,6 @@
         4. Packaging : wrap into spconv.SparseConvTensor
 """
 
-from numpy.ma import count
 import torch
 import spconv.pytorch as spconv
 
@@ -88,12 +87,11 @@ class Voxelizer:
 
         # Encoding by mean pool (group by voxel and mean-pool features)
 
-        features, sparse_indices, inverse_indices, num_voxels = self._group_and_encode(points, voxel_coords, batch_size)
+        features, sparse_indices, inverse_indices, num_voxels, kept_mask = self._group_and_encode(points, voxel_coords, batch_size)
 
         # Wrap into SparseConvTensor (expect (Z, Y, X))
 
         spatial_shape = self.grid_size[[2, 1, 0]].tolist()
-
 
         sparse_tensor = spconv.SparseConvTensor(
             features = features,
@@ -104,17 +102,19 @@ class Voxelizer:
 
         if not return_inverse:
             return sparse_tensor
-        
+
+        # Build full-size inverse_indices (one entry per original point).
+        # Points outside point_range or dropped by max_voxels get fill_value=num_voxels
+        # (out-of-range sentinel used by SegHead._propagate_to_points).
         N_original = valid_mask.shape[0]
-        valid_indices = torch.where(valid_mask)[0]
-        M_kept = inverse_indices.shape[0]
+        valid_indices = torch.where(valid_mask)[0]       # global indices of in-range points
+        kept_valid_indices = valid_indices[kept_mask]    # subset that survived max_voxels clip
 
         inverse_indices_full = torch.full(
             (N_original,), fill_value=num_voxels,
-            dtype=torch.long, device = device,
+            dtype=torch.long, device=device,
         )
-
-        inverse_indices_full[valid_indices[:M_kept]] = inverse_indices
+        inverse_indices_full[kept_valid_indices] = inverse_indices
 
         return sparse_tensor, inverse_indices_full
         
@@ -193,10 +193,11 @@ class Voxelizer:
         num_voxels = unique_keys.shape[0]
 
         # clip to max_voxels : drop points belonging to voxels beyond the limit
+        kept_mask = torch.ones(inverse_indices.shape[0], dtype=torch.bool, device=device)
         if num_voxels >= self.max_voxels:
-            keep_mask = inverse_indices < self.max_voxels
-            points = points[keep_mask]
-            inverse_indices = inverse_indices[keep_mask]
+            kept_mask = inverse_indices < self.max_voxels
+            points = points[kept_mask]
+            inverse_indices = inverse_indices[kept_mask]
             unique_keys = unique_keys[:self.max_voxels]
             num_voxels = self.max_voxels
 
@@ -224,11 +225,11 @@ class Voxelizer:
         vz_v = remain // (Gx * Gy)
         remain = remain % (Gx * Gy)
         vy_v = remain // Gx
-        vx_v = remain % Gy
+        vx_v = remain % Gx
 
         # spconv convention : indices are (V, 4) [batch_idx, Z, Y, X]
 
         sparce_indices = torch.stack([batch_idx_v, vz_v, vy_v, vx_v], dim=1).int()
         
-        return features,  sparce_indices, inverse_indices, num_voxels
+        return features, sparce_indices, inverse_indices, num_voxels, kept_mask
 

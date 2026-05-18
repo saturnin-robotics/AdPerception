@@ -14,12 +14,30 @@ Output per detection:
     (cx, cy, cz, l, w, h, sin_theta, cos_theta, vx, vy, score, class_id)
 """
 
-from typing import Optional
+import math
+from typing import List
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import spconv.pytorch as spconv
+
+# Per-class minimum BEV center distance (meters) used for post-decode NMS.
+# Matches the official nuScenes detection evaluation matching thresholds so
+# that two predictions within this radius are treated as duplicates.
+# Index = CenterPoint class id (same order as DET_CLASSES in the loader).
+NUSCENES_NMS_MIN_DIST: List[float] = [
+    2.0,   # 0  car
+    3.0,   # 1  truck
+    4.0,   # 2  construction_vehicle
+    4.0,   # 3  bus
+    4.0,   # 4  trailer
+    0.5,   # 5  barrier
+    1.0,   # 6  motorcycle
+    1.0,   # 7  bicycle
+    0.5,   # 8  pedestrian
+    0.5,   # 9  traffic_cone
+]
 
 
 class BEVCollapse(nn.Module):
@@ -168,6 +186,12 @@ class DetectionHeads(nn.Module):
         self.rotation = nn.Conv2d(in_channels, 2,           kernel_size=1)
         self.velocity = nn.Conv2d(in_channels, 2,           kernel_size=1)
 
+        # Focal-loss prior: initial heatmap score ≈ 0.1 for all classes.
+        # Matches official CenterPoint (tianweiy) and mmdetection3d: prior_prob=0.1.
+        # bias = log(0.1/0.9) ≈ -2.19.  Prevents sigmoid(0)=0.5 false positives
+        # from random Kaiming weights and removes class bias from untrained weights.
+        nn.init.constant_(self.heatmap.bias, math.log(0.1 / 0.9))  # type: ignore[arg-type]  # ≈ -2.19
+
     def forward(self, bev: torch.Tensor) -> dict:
         """
         Args:
@@ -206,22 +230,75 @@ class BoxDecoder:
 
     def __init__(
         self,
-        voxel_size:     list,
-        point_range:    list,
-        score_thresh:   float = 0.1,
-        max_detections: int   = 500,
-        nms_kernel:     int   = 3,
+        voxel_size:    list,
+        point_range:   list,
+        score_thresh:  float      = 0.1,
+        max_detections: int       = 500,
+        nms_kernel:    int        = 3,
+        nms_min_dists: List[float] = NUSCENES_NMS_MIN_DIST,
     ):
-        self.voxel_size     = voxel_size
-        self.point_range    = point_range
-        self.score_thresh   = score_thresh
+        self.voxel_size    = voxel_size
+        self.point_range   = point_range
+        self.score_thresh  = score_thresh
         self.max_detections = max_detections
-        self.nms_kernel     = nms_kernel
+        self.nms_kernel    = nms_kernel
+        self.nms_min_dists = nms_min_dists
 
         self.dx    = voxel_size[0]
         self.dy    = voxel_size[1]
         self.x_min = point_range[0]
         self.y_min = point_range[1]
+
+    @staticmethod
+    def _center_dist_nms(
+        boxes:      torch.Tensor,    # (N, 8) [cx,cy,cz,l,w,h,sin_t,cos_t]
+        scores:     torch.Tensor,    # (N,)
+        class_ids:  torch.Tensor,    # (N,)
+        vels:       torch.Tensor,    # (N, 2)
+        min_dists:  List[float],
+    ):
+        """
+        Per-class greedy NMS by BEV center distance.
+
+        For each class, iteratively keeps the highest-scored detection and
+        suppresses every remaining detection whose 2D center is within
+        min_dists[class_id] meters.  No rotation or IoU computation needed,
+        so it handles arbitrary yaw correctly by design.
+
+        This matches the nuScenes official matching thresholds so that the
+        suppression radius is semantically meaningful (e.g. two predictions
+        within 4 m of each other for a trailer class are duplicates).
+        """
+        if boxes.shape[0] == 0:
+            return boxes, scores, class_ids, vels
+
+        cx = boxes[:, 0]
+        cy = boxes[:, 1]
+        keep_mask = torch.zeros(boxes.shape[0], dtype=torch.bool, device=boxes.device)
+
+        for cls_id in class_ids.unique():
+            cls   = int(cls_id.item())
+            d     = min_dists[cls] if cls < len(min_dists) else 1.0
+            idx   = (class_ids == cls).nonzero(as_tuple=False).squeeze(1)
+            order = idx[scores[idx].argsort(descending=True)]
+
+            while len(order) > 0:
+                i = order[0]
+                keep_mask[i] = True
+                if len(order) == 1:
+                    break
+                rest  = order[1:]
+                dx    = cx[rest] - cx[i]
+                dy    = cy[rest] - cy[i]
+                dist  = (dx * dx + dy * dy).sqrt()
+                order = rest[dist >= d]
+
+        return (
+            boxes[keep_mask],
+            scores[keep_mask],
+            class_ids[keep_mask],
+            vels[keep_mask],
+        )
 
     def decode(self, preds: dict, batch_size: int) -> list:
         """
@@ -304,10 +381,15 @@ class BoxDecoder:
         cy = (ys.float() + dy) * self.dy + self.y_min + self.dy / 2
         cz = height[0, ys, xs]
 
-        # dimensions: exp to recover real values from log predictions
-        l = dims[0, ys, xs].exp()
-        w = dims[1, ys, xs].exp()
-        h = dims[2, ys, xs].exp()
+        # dimensions: exp to recover real values from log predictions.
+        # Clamp to realistic nuScenes object sizes to avoid multi-meter phantom
+        # boxes from random weights that would cause spurious IoU overlaps.
+        #   l (length): 0.3 m (bicycle) .. 12 m (articulated bus)
+        #   w (width) : 0.3 m (bicycle) .. 3 m  (bus)
+        #   h (height): 0.3 m (cone)    .. 4 m  (truck)
+        l = dims[0, ys, xs].exp().clamp(0.3, 12.0)
+        w = dims[1, ys, xs].exp().clamp(0.3,  3.0)
+        h = dims[2, ys, xs].exp().clamp(0.3,  4.0)
 
         sin_t = rotation[0, ys, xs]
         cos_t = rotation[1, ys, xs]
@@ -317,6 +399,11 @@ class BoxDecoder:
 
         boxes = torch.stack([cx, cy, cz, l, w, h, sin_t, cos_t], dim=1)
         vels  = torch.stack([vx, vy], dim=1)
+
+        # step 4 -- per-class center-distance NMS (nuScenes matching thresholds)
+        boxes, scores, class_ids, vels = self._center_dist_nms(
+            boxes, scores, class_ids, vels, self.nms_min_dists
+        )
 
         return boxes, scores, class_ids, vels
 
@@ -337,18 +424,25 @@ class CenterPointHead(nn.Module):
         grid_size       : [Gz, Gy, Gx] from voxelizer
         score_thresh    : minimum heatmap score to keep a detection
         max_detections  : maximum number of boxes per frame
+        nms_kernel      : heatmap max-pool kernel for peak extraction.
+                          Rule of thumb: ceil(1.0 / voxel_size_xy) | odd.
+                          For 0.1 m voxels → 11, for 0.2 m → 7.
+        nms_min_dists   : per-class min BEV center distance (m) for post-decode
+                          NMS. Defaults to NUSCENES_NMS_MIN_DIST.
     """
 
     def __init__(
         self,
-        in_channels:    int   = 256,
-        neck_channels:  int   = 128,
-        num_classes:    int   = 10,
-        voxel_size:     list  = [0.1, 0.1, 0.2],
-        point_range:    list  = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
-        grid_size:      list  = [40, 1024, 1024],
-        score_thresh:   float = 0.1,
-        max_detections: int   = 500,
+        in_channels:    int        = 256,
+        neck_channels:  int        = 128,
+        num_classes:    int        = 10,
+        voxel_size:     list       = [0.1, 0.1, 0.2],
+        point_range:    list       = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
+        grid_size:      list       = [40, 1024, 1024],
+        score_thresh:   float      = 0.1,
+        max_detections: int        = 500,
+        nms_kernel:     int        = 7,
+        nms_min_dists:  List[float] = NUSCENES_NMS_MIN_DIST,
     ):
         super().__init__()
 
@@ -356,10 +450,12 @@ class CenterPointHead(nn.Module):
         self.neck     = SharedNeck(in_channels, neck_channels)
         self.heads    = DetectionHeads(neck_channels, num_classes)
         self.decoder  = BoxDecoder(
-            voxel_size     = voxel_size,
-            point_range    = point_range,
-            score_thresh   = score_thresh,
+            voxel_size    = voxel_size,
+            point_range   = point_range,
+            score_thresh  = score_thresh,
             max_detections = max_detections,
+            nms_kernel    = nms_kernel,
+            nms_min_dists = nms_min_dists,
         )
 
     def forward(

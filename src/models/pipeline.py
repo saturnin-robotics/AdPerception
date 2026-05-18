@@ -19,7 +19,7 @@ src/tracking/simpletrack_wrapper.py -- this module outputs
 raw detections, the tracker consumes them frame by frame.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
@@ -27,7 +27,7 @@ import spconv.pytorch as spconv
 
 from src.utils.voxelizer import Voxelizer
 from src.models.backbone.ptv3_wrapper import PTv3Wrapper
-from src.models.heads.centerpoint import CenterPointHead
+from src.models.heads.centerpoint import CenterPointHead, NUSCENES_NMS_MIN_DIST
 from src.models.heads.seg_head import SegHead
 
 
@@ -45,19 +45,26 @@ class LiDARPerceptionPipeline(nn.Module):
         num_seg_classes : segmentation classes (nuScenes = 17)
         score_thresh    : minimum detection score to keep a box
         max_detections  : maximum boxes per frame
+        nms_kernel      : heatmap max-pool kernel size (odd int).
+                          Rule of thumb: ceil(1.0 / dx) | odd.
+                          Default 7 matches 0.2 m voxels (≈1 m suppression radius).
+        nms_min_dists   : per-class min BEV center distance for post-decode NMS.
+                          Defaults to the nuScenes official matching thresholds.
     """
 
     def __init__(
         self,
-        voxel_size:      list  = [0.1, 0.1, 0.2],
-        point_range:     list  = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
-        max_voxels:      int   = 120_000,
-        ptv3_out_ch:     int   = 256,
-        neck_channels:   int   = 128,
-        num_det_classes: int   = 10,
-        num_seg_classes: int   = 17,
-        score_thresh:    float = 0.1,
-        max_detections:  int   = 500,
+        voxel_size:      list       = [0.1, 0.1, 0.2],
+        point_range:     list       = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
+        max_voxels:      int        = 120_000,
+        ptv3_out_ch:     int        = 256,
+        neck_channels:   int        = 128,
+        num_det_classes: int        = 10,
+        num_seg_classes: int        = 17,
+        score_thresh:    float      = 0.1,
+        max_detections:  int        = 500,
+        nms_kernel:      int        = 7,
+        nms_min_dists:   List[float] = NUSCENES_NMS_MIN_DIST,
     ):
         super().__init__()
 
@@ -91,6 +98,8 @@ class LiDARPerceptionPipeline(nn.Module):
             grid_size      = grid_size,
             score_thresh   = score_thresh,
             max_detections = max_detections,
+            nms_kernel     = nms_kernel,
+            nms_min_dists  = nms_min_dists,
         )
 
         # segmentation head -- shares PTv3 features with det_head
@@ -174,11 +183,27 @@ class LiDARPerceptionPipeline(nn.Module):
         Args:
             checkpoint_path : path to sonata.pth
         """
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         state_dict = checkpoint.get(
             "state_dict", checkpoint.get("model", checkpoint)
         )
-        missing, unexpected = self.backbone.backbone.load_state_dict(
-            state_dict, strict=False
+
+        # filter out keys whose shape doesn't match the current model
+        # (e.g. embedding.stem.linear.weight: [48, 9] vs [48, 4] due to in_channels diff)
+        model_sd   = self.backbone.backbone.state_dict()
+        compatible = {
+            k: v for k, v in state_dict.items()
+            if k in model_sd and v.shape == model_sd[k].shape
+        }
+        skipped = [k for k in state_dict if k not in compatible]
+
+        missing, _ = self.backbone.backbone.load_state_dict(
+            compatible, strict=False
         )
-        print(f"Sonata -- missing: {len(missing)}, unexpected: {len(unexpected)}")
+        print(
+            f"Sonata -- loaded: {len(compatible)}, "
+            f"missing: {len(missing)}, "
+            f"skipped (shape mismatch): {len(skipped)}"
+        )
+        if skipped:
+            print(f"  skipped keys: {skipped[:5]}{'...' if len(skipped) > 5 else ''}")
