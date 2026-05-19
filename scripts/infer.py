@@ -86,7 +86,7 @@ def main(args: argparse.Namespace) -> None:
     pipeline = None
     if not args.use_gt:
         pipeline = LiDARPerceptionPipeline(
-            voxel_size     = [0.1, 0.1, 0.2],
+            voxel_size     = [0.2, 0.2, 0.4],
             score_thresh   = 0.15,
             max_detections = 40,
             nms_kernel     = 7,

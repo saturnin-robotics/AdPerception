@@ -1,11 +1,25 @@
 # =============================================================================
-# AdPerception — requirements.txt
+# AdPerception -- requirements.txt
 # Python 3.11 | CUDA 12.1 | PyTorch 2.1.2
 #
-# Install these MANUALLY before running pip install -r requirements.txt :
-#   pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
-#   pip install spconv-cu120
-#   pip install torch-scatter torch-cluster -f https://data.pyg.org/whl/torch-2.1.2+cu121.html
+# Step 1 -- install CUDA wheels manually (not on PyPI directly):
+#
+#   pip install torch==2.1.2 torchvision==0.16.2 \
+#       --index-url https://download.pytorch.org/whl/cu121
+#
+#   pip install spconv-cu121
+#
+#   pip install torch-scatter torch-cluster \
+#       -f https://data.pyg.org/whl/torch-2.1.2+cu121.html
+#
+# Step 2 -- install the rest:
+#
+#   pip install -r requirements.txt
+#
+# Notes:
+#   - spconv-cu121 replaces spconv-cu120 (cu120 crashes on CUDA driver >= 13.x)
+#   - rerun-sdk pinned at 0.16.1 (0.17+ requires numpy >= 2.x, incompatible)
+#   - matplotlib pinned at 3.5.3 (3.6+ breaks mplDeprecation import)
 # =============================================================================
 
 # --- Core numerics ---
@@ -39,6 +53,7 @@ pyquaternion==0.9.9
 lapx>=0.5.5
 
 # --- Visualization ---
+rerun-sdk==0.16.1
 matplotlib==3.5.3
 opencv-python-headless==4.10.0.84
 
