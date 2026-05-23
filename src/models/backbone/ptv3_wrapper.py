@@ -41,7 +41,6 @@ class PTv3Wrapper(nn.Module):
             in_channels        = in_channels,
             order              = ["z", "z-trans", "hilbert", "hilbert-trans"],
             stride             = [2, 2, 2, 2],
-            # architecture matches Sonata checkpoint
             enc_depths         = [3, 3, 3, 12, 3],
             enc_channels       = [48, 96, 192, 384, 512],
             enc_num_head       = [3, 6, 12, 24, 32],
@@ -68,12 +67,12 @@ class PTv3Wrapper(nn.Module):
 
         self.backbone: nn.Module = PointTransformerV3(**cfg)  # type: ignore
 
-        dec_out: int = int(cfg["dec_channels"][0])  # type: ignore  -- dec[0] = finest stage output
+        dec_out: int = int(cfg["dec_channels"][0])
         self.proj = nn.Linear(dec_out, out_channels)
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Public API
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def forward(self, sparse_tensor: spconv.SparseConvTensor) -> torch.Tensor:
         """
@@ -84,54 +83,40 @@ class PTv3Wrapper(nn.Module):
         Returns:
             torch.Tensor (V, C_out) - enriched voxel features ready for heads
         """
-        # convert SparseConvTensor to Pointcept Point dict
         point = self._to_point(sparse_tensor)
 
-        # PTv3 forward pass - enriches point["feat"] in place
-        point = self.backbone(point)
+        # Force fp32 for all spconv operations inside PTv3.
+        # spconv-cu121 backward crashes with mixed precision on H100
+        # due to empty indices in Ampere fp16 kernels.
+        with torch.cuda.amp.autocast(enabled=False):
+            point.feat = point.feat.float()
+            point = self.backbone(point)
 
-        # extract enriched features and project to out_channels
-        features = self.proj(point["feat"])  # (V, C_out)
-
+        features = self.proj(point["feat"])
         return features
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Private helpers
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def _to_point(self, sparse_tensor: spconv.SparseConvTensor) -> Point:
         """
         Convert a spconv SparseConvTensor to a Pointcept Point dict.
 
-        spconv indices convention  : (V, 4)  [batch, Z, Y, X]
-        Pointcept coord convention : (V, 3)  [Z, Y, X] - batch separated
-
-        Pointcept separates coord and batch because PTv3 serializes points
-        on Z-order / Hilbert curves using spatial coordinates only. Having
-        batch as a separate vector avoids filtering it out at every spatial
-        operation inside the backbone.
-
-        Args:
-            sparse_tensor : spconv.SparseConvTensor
-
-        Returns:
-            Point dict with keys:
-                "feat"      : (V, C)   voxel features
-                "coord"     : (V, 3)   spatial indices [Z, Y, X]
-                "batch"     : (V,)     batch index per voxel
-                "grid_size" : list[3]  [Gz, Gy, Gx]
+        spconv indices : (V, 4)  [batch, Z, Y, X]
+        Pointcept coord: (V, 3)  [Z, Y, X] -- batch separated
         """
         indices = sparse_tensor.indices  # (V, 4) [batch, Z, Y, X]
 
         point = Point(
-                    feat      = sparse_tensor.features,
-                    coord     = indices[:, 1:].float(),
-                    batch     = indices[:, 0].long(),
-                    grid_size = torch.tensor(
-                    sparse_tensor.spatial_shape,
-                    dtype  = torch.float32,
-                    device = sparse_tensor.features.device,
-                    ),
-                )
+            feat      = sparse_tensor.features,
+            coord     = indices[:, 1:].float(),
+            batch     = indices[:, 0].long(),
+            grid_size = torch.tensor(
+                sparse_tensor.spatial_shape,
+                dtype  = torch.float32,
+                device = sparse_tensor.features.device,
+            ),
+        )
 
         return point
