@@ -8,7 +8,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=24
 #SBATCH --hint=nomultithread
-#SBATCH --time=05:00:00
+#SBATCH --time=20:00:00
 #SBATCH --output=/lustre/fswork/projects/rech/cks/uso64da/AdPerception/logs/%j.out
 #SBATCH --error=/lustre/fswork/projects/rech/cks/uso64da/AdPerception/logs/%j.err
 
@@ -23,7 +23,6 @@ export WORK=/lustre/fswork/projects/rech/cks/uso64da
 export SCRATCH=/lustre/fsn1/projects/rech/cks/uso64da
 export PYTHONPATH=$WORK/AdPerception/third_party/Pointcept:$WORK/AdPerception/third_party/SimpleTrack:$WORK/AdPerception
 export TMPDIR=$SCRATCH/tmp
-export CUDA_LAUNCH_BLOCKING=1
 
 mkdir -p $WORK/AdPerception/logs $SCRATCH/tmp
 
@@ -39,10 +38,9 @@ python -u scripts/train.py \
     --config    jeanzay \
     --version   v1.0-trainval \
     --dataroot  /lustre/fsn1/projects/rech/cks/uso64da/data/nuscenes \
-    --epochs    5 \
-    --lr        1e-2 \
+    --epochs    20 \
+    --lr        3e-3 \
     --workers   8 \
-    --no-amp \
     $RESUME
 
-echo "Job finish : $(date)"
+echo "Job finished: $(date)"

@@ -239,6 +239,9 @@ def focal_loss_cornernet(
     pos_mask = (gt == 1.0)
     num_pos  = pos_mask.sum().float().clamp(min=1.0)
 
+    # Cast to fp32 to avoid inf/NaN from log(0) under bfloat16 autocast
+    pred = pred.float().clamp(1e-6, 1 - 1e-6)
+    gt = gt.float()
     pos_loss = -((1 - pred) ** alpha) * torch.log(pred) * pos_mask.float()
     neg_loss = (
         -((1 - gt) ** beta)
@@ -291,7 +294,8 @@ def centerpoint_loss(
     )
 
     # --- heatmap focal loss ------------------------------------------------------
-    pred_hm = torch.sigmoid(preds["heatmap"][0])   # (K, H, W)
+    # Force fp32 before sigmoid -- bfloat16 saturates sigmoid(>8) to 1.0 exactly
+    pred_hm = torch.sigmoid(preds["heatmap"][0].float())   # (K, H, W)
     loss_hm = focal_loss_cornernet(pred_hm, gt_hm)
 
     loss_dict = {"heatmap": loss_hm.item()}
